@@ -1088,16 +1088,23 @@ async function exportPNG(btn) {
   toast('正在產生圖片…');
   try {
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#ffffff';
+    // widen the sheet so the longest gantt fits whole: day cells need ~24px, week ticks ~8px a day;
+    // past 3600px the gantt squeezes instead of growing
+    const maxN = Math.max(0, ...[...document.querySelectorAll('#paper .gantt')].map(g => parseInt(g.style.getPropertyValue('--n'), 10) || 0));
+    const width = Math.round(Math.min(3600, Math.max(1120, 104 + 340 + maxN * (maxN <= 31 ? 24 : 8))));
+    // keep the canvas under ~16M pixels so phones can still draw it; the live sheet's height is a safe estimate
+    const scale = Math.max(1, Math.min(2, Math.sqrt(16e6 / (width * Math.max(800, $('#paper').scrollHeight)))));
     const canvas = await window.html2canvas($('#paper'), {
-      scale: 2, backgroundColor: bg, useCORS: true, logging: false, windowWidth: 1400,
+      scale, backgroundColor: bg, useCORS: true, logging: false, windowWidth: width + 100,
       onclone(doc) {
-        const l = doc.getElementById('layout'); if (l) l.dataset.view = 'preview';
+        const l = doc.getElementById('layout'); if (l) { l.dataset.view = 'preview'; l.style.display = 'block'; l.style.maxWidth = 'none'; }
+        const ed = doc.querySelector('.editor'); if (ed) ed.style.display = 'none';
         const pv = doc.querySelector('.preview'); if (pv) { pv.style.position = 'static'; pv.style.maxHeight = 'none'; }
         const sc = doc.getElementById('paper-scroll'); if (sc) { sc.style.overflow = 'visible'; sc.style.padding = '0'; }
         const pp = doc.getElementById('paper');
-        pp.style.width = '1120px'; pp.style.maxWidth = 'none'; pp.style.fontVariantNumeric = 'normal'; pp.style.boxShadow = 'none'; pp.style.borderRadius = '0'; pp.style.padding = '48px 52px 32px';
+        pp.style.width = `${width}px`; pp.style.maxWidth = 'none'; pp.style.fontVariantNumeric = 'normal'; pp.style.boxShadow = 'none'; pp.style.borderRadius = '0'; pp.style.padding = '48px 52px 32px';
         doc.querySelectorAll('.gantt-scroll').forEach(g => { g.style.overflow = 'visible'; });
-        doc.querySelectorAll('.gantt').forEach(g => { g.style.setProperty('--lw', '340px'); });
+        doc.querySelectorAll('.gantt').forEach(g => { g.style.setProperty('--lw', '340px'); g.style.minWidth = '0'; });
       }
     });
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
