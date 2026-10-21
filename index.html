@@ -875,14 +875,19 @@ function ganttHTML(p, s) {
   const pct = x => `${(x / N * 100).toFixed(4)}%`;
   const td = todayDay();
 
-  let months = '';
+  // a label only goes where it fits: a day gets at least 15px on screen in day view and 8px in the
+  // exported image in week view; the year rides on the first month of that year wide enough to carry it
+  const dayPx = N <= 31 ? 15 : Math.min(8, 3156 / N);
+  let months = '', yearShown = null;
   for (let i = 0; i < N;) {
     const p0 = parts(s.start + i);
     let j = i;
     while (j + 1 < N && parts(s.start + j + 1).m === p0.m) j++;
-    const len = j - i + 1;
-    const label = (i === 0 || p0.m === 1) ? `${p0.y} 年 ${p0.m} 月` : `${p0.m} 月`;
-    months += `<span class="g-month" style="left:${pct(i)};width:${pct(len)}">${len >= 3 ? label : ''}</span>`;
+    const len = j - i + 1, room = len * dayPx;
+    let label = '';
+    if (yearShown !== p0.y && room >= 84) { label = `${p0.y} 年 ${p0.m} 月`; yearShown = p0.y; }
+    else if (room >= 36) label = `${p0.m} 月`;
+    months += `<span class="g-month" style="left:${pct(i)};width:${pct(len)}">${label}</span>`;
     i = j + 1;
   }
 
