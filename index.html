@@ -218,6 +218,11 @@ textarea.input{height:auto;min-height:72px;padding:8px 12px;resize:vertical}
 .stepper input:focus{outline:none}
 .stepper:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .unit{font-size:12px;color:var(--ink-3);margin-left:-4px}
+.lead{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.lead.on{color:var(--accent);font-weight:500}
+.stepper.sm{height:24px}
+.stepper.sm button{width:22px;height:22px;font-size:13px}
+.stepper.sm input{width:28px;height:22px;font-size:12px}
 .tchip{height:28px;padding:0 11px;border-radius:980px;border:1px solid var(--line);background:transparent;color:var(--ink-3);font-size:12px;font-weight:500;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
 .tchip:hover{border-color:var(--line-strong);color:var(--ink-2)}
 .tchip.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
@@ -282,6 +287,7 @@ textarea.input{height:auto;min-height:72px;padding:8px 12px;resize:vertical}
 .g-name .untitled{color:var(--paper-ink-3);font-weight:500}
 .g-meta,.g-note{margin-left:22px;font-size:11px;line-height:1.5;color:var(--paper-ink-2)}
 .g-meta .rv{color:var(--paper-review);font-weight:600}
+.g-meta .ov{color:var(--paper-accent);font-weight:600}
 .g-meta .nw{white-space:nowrap}
 .g-note{color:var(--paper-ink-3)}
 .g-track{position:relative;min-height:42px}
@@ -543,6 +549,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = p => p + Math.random().toString(36).slice(2, 10);
 const clampDays = v => Math.min(365, Math.max(1, parseInt(v, 10) || 1));
+const clampLead = v => Math.min(365, Math.max(0, parseInt(v, 10) || 0));
 
 /* ---------- dates as whole day numbers (UTC) ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -596,7 +603,7 @@ function makeProject(key, projects) {
 
 function makeStep(s = {}) {
   const ms = s.type === 'milestone';
-  return { id: uid('s'), type: ms ? 'milestone' : 'task', name: s.name || '', days: ms ? 0 : clampDays(s.days), review: !!s.review, note: s.note || '' };
+  return { id: uid('s'), type: ms ? 'milestone' : 'task', name: s.name || '', days: ms ? 0 : clampDays(s.days), lead: ms ? 0 : clampLead(s.lead), review: !!s.review, note: s.note || '' };
 }
 
 function sanitize(d) {
@@ -618,6 +625,7 @@ function sanitize(d) {
         type: s.type === 'milestone' ? 'milestone' : 'task',
         name: String(s.name ?? ''),
         days: s.type === 'milestone' ? 0 : clampDays(s.days),
+        lead: s.type === 'milestone' ? 0 : clampLead(s.lead),
         review: !!s.review,
         note: String(s.note ?? '')
       }))
@@ -673,30 +681,43 @@ function nextWorking(n) {
   return n;
 }
 
-function schedule(p) {
-  const tasks = p.steps.filter(s => s.type !== 'milestone');
-  if (!validIso(p.start)) return { noStart: true, hasTask: tasks.length > 0, total: tasks.reduce((a, s) => a + clampDays(s.days), 0), rows: null };
-  const requested = dayOf(p.start);
-  const start = nextWorking(requested);
-  let cur = start, lastEnd = null, total = 0, end = start, hasTask = false;
-  const rows = p.steps.map(s => {
-    if (s.type === 'milestone') {
-      // delivery lands on the working day after the previous step ends
-      const d = lastEnd === null ? start : nextWorking(lastEnd + 1);
-      end = Math.max(end, d);
-      return { kind: 'ms', date: d };
-    }
-    const n = clampDays(s.days), days = [];
-    for (let c = cur, g = 0; days.length < n && g < 4000; c++, g++) if (isWorking(c)) days.push(c);
-    const r = { kind: 'task', start: days[0], end: days[days.length - 1], days, n: days.length };
-    lastEnd = r.end;
-    cur = nextWorking(r.end + 1);
-    total += r.n;
-    end = Math.max(end, r.end);
-    hasTask = true;
+// lay the steps out on a line of working days (index 0 = the first working day). A step starts the working
+// day after every step above it has ended, minus its lead, but never before the task right above it starts.
+// A milestone lands on the working day after every step above it has ended.
+function layout(steps) {
+  let maxEnd = -1, prev = null;
+  return steps.map(st => {
+    if (st.type === 'milestone') return { kind: 'ms', at: maxEnd + 1 };
+    const n = clampDays(st.days);
+    const s = prev ? Math.max(prev.s, maxEnd + 1 - clampLead(st.lead)) : maxEnd + 1;
+    const e = s + n - 1;
+    const r = { kind: 'task', s, e, n, overlap: prev ? Math.max(0, Math.min(prev.e, e) - s + 1) : 0 };
+    maxEnd = Math.max(maxEnd, e);
+    prev = r;
     return r;
   });
-  return { requested, start, shifted: requested !== start, rows, total, end, hasTask };
+}
+// a step can start at most together with the task right above it
+function maxLead(p, st) {
+  const above = p.steps.slice(0, p.steps.indexOf(st)).reverse().find(x => x.type !== 'milestone');
+  return above ? clampDays(above.days) : 0;
+}
+
+function schedule(p) {
+  const plan = layout(p.steps);
+  const tasks = plan.filter(r => r.kind === 'task');
+  // working days actually spanned from kick-off to the last step's end; overlapping days count once
+  const total = tasks.length ? Math.max(...tasks.map(r => r.e)) + 1 : 0;
+  if (!validIso(p.start)) return { noStart: true, hasTask: tasks.length > 0, total, rows: null };
+  const requested = dayOf(p.start);
+  const start = nextWorking(requested);
+  const last = Math.max(0, ...plan.map(r => r.kind === 'ms' ? r.at : r.e));
+  const W = [start]; // W[i] = the i-th working day from the start
+  while (W.length <= last) W.push(nextWorking(W[W.length - 1] + 1));
+  const rows = plan.map(r => r.kind === 'ms'
+    ? { kind: 'ms', date: W[r.at] }
+    : { kind: 'task', start: W[r.s], end: W[r.e], days: W.slice(r.s, r.e + 1), n: r.n, overlap: r.overlap });
+  return { requested, start, shifted: requested !== start, rows, total, end: W[last], hasTask: tasks.length > 0 };
 }
 
 const rangeText = r => r.kind === 'ms' ? md(r.date) : (r.start === r.end ? md(r.start) : `${md(r.start)} – ${md(r.end)}`);
@@ -733,6 +754,8 @@ function stepHTML(p, s, i, no) {
       <input class="step-name" id="name-${s.id}" data-field="name" value="${esc(s.name)}" placeholder="${esc(ph)}" aria-label="${ms ? '里程碑名稱' : `第 ${no} 階段名稱`}" autocomplete="off" enterkeyhint="next">
       <div class="step-sub">
         <span class="step-range" data-range></span>
+        ${!ms && no > 1 ? `<span class="lead${clampLead(s.lead) ? ' on' : ''}" title="和上一階段重疊幾個工作天；填上一階段的天數就是同時開始">提前
+          <span class="stepper sm" role="group" aria-label="提前開始天數"><button type="button" data-act="l-dec" aria-label="少提前一天">−</button><input type="number" inputmode="numeric" min="0" max="365" id="lead-${s.id}" data-field="lead" value="${clampLead(s.lead)}" aria-label="提前開始天數"><button type="button" data-act="l-inc" aria-label="多提前一天">+</button></span>天開始</span>` : ''}
         <input class="step-note" id="note-${s.id}" data-field="note" value="${esc(s.note)}" placeholder="備註（選填）" aria-label="備註" autocomplete="off">
       </div>
     </div>
@@ -852,7 +875,10 @@ function refresh() {
     card.querySelector('[data-quick]').hidden = !isPristine(p);
     p.steps.forEach((st, i) => {
       const el = card.querySelector(`[data-sid="${st.id}"] [data-range]`);
-      if (el) el.textContent = s.noStart ? '' : rangeText(s.rows[i]);
+      const r = s.noStart ? null : s.rows[i];
+      if (el) el.textContent = r ? rangeText(r) + (r.overlap ? ` · 重疊 ${r.overlap} 天` : '') : '';
+      const ld = card.querySelector(`[data-sid="${st.id}"] .lead`);
+      if (ld) ld.classList.toggle('on', clampLead(st.lead) > 0);
     });
   }
   renderPaper(sched);
@@ -930,7 +956,7 @@ function ganttHTML(p, s) {
       track += `<i class="g-bar" style="left:calc(${pct(g[0] - s.start)} + 1px);width:calc(${pct(g[1] - g[0] + 1)} - 2px)"></i>`;
     });
     if (st.review) track += `<i class="g-review" style="left:${pct(r.end - s.start + 1)}" title="含主管確認"></i>`;
-    const meta = `<span class="nw">${rangeText(r)}</span> · <span class="nw">${r.n} 天</span>${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
+    const meta = `<span class="nw">${rangeText(r)}</span> · <span class="nw">${r.n} 天</span>${r.overlap ? ` · <span class="nw ov">與上階段重疊 ${r.overlap} 天</span>` : ''}${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
     return `<div class="g-row">
       <div class="g-label"><div class="g-name"><b>${no}</b>${nm}</div><div class="g-meta">${meta}</div>${note}</div>
       <div class="g-track">${track}</div>
@@ -1000,7 +1026,8 @@ function undatedHTML(p) {
   const items = p.steps.map(st => {
     const ms = st.type === 'milestone';
     const nm = st.name.trim() ? esc(st.name) : `<span class="untitled">${ms ? '未命名里程碑' : '未命名階段'}</span>`;
-    const meta = ms ? '前一階段完成後的隔一個工作天' : `${clampDays(st.days)} 天${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
+    const lead = !ms && no > 0 ? Math.min(clampLead(st.lead), maxLead(p, st)) : 0;
+    const meta = ms ? '前面所有階段完成後的隔一個工作天' : `${clampDays(st.days)} 天${lead ? ` · <span class="nw ov">提前 ${lead} 天開始</span>` : ''}${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
     const note = st.note.trim() ? `<div class="g-note">${esc(st.note)}</div>` : '';
     return `<li${ms ? ' class="is-ms-row"' : ''}><div class="g-name"><b>${ms ? '◆' : ++no}</b><span>${nm}</span></div><div class="g-meta">${meta}</div>${note}</li>`;
   }).join('');
@@ -1010,22 +1037,23 @@ function undatedHTML(p) {
 function ruleText() {
   const off = [state.skipWeekends && '週六、週日', state.skipNational && '國定假日', state.holidays.length && `${state.holidays.length} 個休假日`].filter(Boolean);
   const list = off.length > 1 ? `${off.slice(0, -1).join('、')}及${off.at(-1)}` : off[0];
-  return `${list ? `排除${list}` : '每天都算工作天'}；完稿為前一階段完成後的隔一個工作天`;
+  return `${list ? `排除${list}` : '每天都算工作天'}；完稿為前面所有階段完成後的隔一個工作天`;
 }
 
 /* ---------- exports ---------- */
-// plain-text outline for LINE / Email: 📌 title (共 N 天), then • step (備註，含主管確認) - N天
+// plain-text outline for LINE / Email: 📌 title (共 N 天), then • step (備註，含主管確認，與上階段重疊 N 天) - N天
 function buildText() {
   const out = [`【${state.docTitle.trim() || '專案時程規劃書'}】`];
   for (const p of state.projects) {
-    const total = p.steps.reduce((a, st) => a + (st.type === 'milestone' ? 0 : clampDays(st.days)), 0);
-    out.push('', `📌 ${p.title.trim() || '未命名專案'} (共 ${total} 天)`);
-    for (const st of p.steps) {
+    const plan = layout(p.steps);
+    out.push('', `📌 ${p.title.trim() || '未命名專案'} (共 ${schedule(p).total} 天)`);
+    p.steps.forEach((st, i) => {
       const ms = st.type === 'milestone';
       const name = st.name.trim() || (ms ? '未命名里程碑' : '未命名階段');
-      const extra = [st.note.trim(), !ms && st.review ? '含主管確認' : ''].filter(Boolean).join('，');
+      const ov = ms ? 0 : plan[i].overlap;
+      const extra = [st.note.trim(), !ms && st.review ? '含主管確認' : '', ov ? `與上階段重疊 ${ov} 天` : ''].filter(Boolean).join('，');
       out.push(`  • ${name}${extra ? ` (${extra})` : ''}${ms ? '' : ` - ${clampDays(st.days)}天`}`);
-    }
+    });
   }
   return out.join('\n');
 }
@@ -1033,19 +1061,20 @@ function buildText() {
 function buildCSV() {
   rebuildHolidays();
   const cell = v => /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
-  const rows = [['專案', '序號', '階段', '類型', '開始日', '結束日', '工作天', '含主管確認', '備註']];
+  const rows = [['專案', '序號', '階段', '類型', '開始日', '結束日', '工作天', '含主管確認', '備註', '與上階段重疊天數']];
   for (const p of state.projects) {
-    const s = schedule(p);
+    const s = schedule(p), plan = layout(p.steps);
     let no = 0;
     p.steps.forEach((st, i) => {
+      const ov = plan[i].kind === 'task' ? plan[i].overlap : '';
       if (s.noStart) {
-        if (st.type === 'milestone') rows.push([p.title, '', st.name, '里程碑', '', '', 0, '', st.note]);
-        else rows.push([p.title, ++no, st.name, '工作階段', '', '', clampDays(st.days), st.review ? '是' : '', st.note]);
+        if (st.type === 'milestone') rows.push([p.title, '', st.name, '里程碑', '', '', 0, '', st.note, '']);
+        else rows.push([p.title, ++no, st.name, '工作階段', '', '', clampDays(st.days), st.review ? '是' : '', st.note, ov]);
         return;
       }
       const r = s.rows[i];
-      if (r.kind === 'ms') rows.push([p.title, '', st.name, '里程碑', isoOfDay(r.date), isoOfDay(r.date), 0, '', st.note]);
-      else rows.push([p.title, ++no, st.name, '工作階段', isoOfDay(r.start), isoOfDay(r.end), r.n, st.review ? '是' : '', st.note]);
+      if (r.kind === 'ms') rows.push([p.title, '', st.name, '里程碑', isoOfDay(r.date), isoOfDay(r.date), 0, '', st.note, '']);
+      else rows.push([p.title, ++no, st.name, '工作階段', isoOfDay(r.start), isoOfDay(r.end), r.n, st.review ? '是' : '', st.note, ov]);
     });
   }
   return '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n');
@@ -1305,6 +1334,12 @@ document.addEventListener('click', e => {
       commit();
       break;
     }
+    case 'l-inc': case 'l-dec': {
+      s.lead = Math.min(maxLead(p, s), clampLead(clampLead(s.lead) + (act === 'l-inc' ? 1 : -1)));
+      b.parentElement.querySelector('input').value = s.lead;
+      commit();
+      break;
+    }
     case 's-review': {
       s.review = !s.review;
       b.classList.toggle('on', s.review);
@@ -1362,6 +1397,7 @@ document.addEventListener('input', e => {
   else if (s && f === 'name') s.name = el.value;
   else if (s && f === 'note') s.note = el.value;
   else if (s && f === 'days') { if (el.value === '') return; s.days = clampDays(el.value); }
+  else if (s && f === 'lead') { if (el.value === '') return; s.lead = Math.min(maxLead(p, s), clampLead(el.value)); }
   commit();
 });
 
@@ -1370,6 +1406,7 @@ document.addEventListener('change', e => {
   if (el.id === 'skip-weekends') { state.skipWeekends = el.checked; commit(); return; }
   if (el.id === 'skip-national') { state.skipNational = el.checked; commit(); return; }
   if (el.dataset && el.dataset.field === 'days') { const { s } = ctx(el); if (s) el.value = s.days; }
+  if (el.dataset && el.dataset.field === 'lead') { const { s } = ctx(el); if (s) el.value = clampLead(s.lead); }
   if (el.dataset && el.dataset.field === 'start' && el.value !== '' && !validIso(el.value)) { const { p } = ctx(el); if (p) el.value = p.start; }
 });
 
