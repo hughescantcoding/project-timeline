@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>專案時程表產生器</title>
+<meta name="description" content="輸入起始日與工作天數，自動避開週末與台灣國定假日，排出日期與甘特圖。">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: frosted top bar · editor column (5fr) beside a sticky paper preview (7fr); under 1000px they stack behind a segmented switch */
+:root{
+  --bg:#f5f3f0; --surface:#ffffff; --surface-2:#f8f6f3; --fill:#eeeae5; --tray:#e8e3dc;
+  --ink:#1f1c19; --ink-2:#5f5851; --ink-3:#8b837a;
+  --line:#e6e0d8; --line-strong:#d3cbc1;
+  --accent:#8a5a3b; --accent-soft:#f3e9e1;
+  --primary:#1f1c19; --on-primary:#faf8f5;
+  --danger:#a5463a; --danger-soft:#f7e7e3; --on-danger:#ffffff;
+  --ring:rgba(138,90,59,.30);
+  --topbar:rgba(245,243,240,.82);
+  --shadow-card:0 1px 1px rgba(60,45,30,.04),0 6px 20px rgba(60,45,30,.05);
+  --shadow-pop:0 12px 40px rgba(50,38,26,.16),0 2px 6px rgba(50,38,26,.08);
+  --toast-bg:rgba(31,28,25,.94); --toast-ink:#faf8f5; --toast-act:#e3b796;
+  /* Paper: the exported document stays a light sheet in both themes */
+  --paper:#ffffff; --paper-ink:#1f1c19; --paper-ink-2:#675f57; --paper-ink-3:#9a9188;
+  --paper-line:#ece7e1; --paper-off:#f4f1ed; --paper-soft:#faf8f5;
+  --paper-review:#5b3d2a; --paper-today:#b0533d; --paper-accent:#8a5a3b; --paper-hol:#f6e7de;
+  --paper-shadow:0 1px 2px rgba(50,38,26,.06),0 18px 50px rgba(50,38,26,.10);
+  --s1:#b8876b; --s2:#8e9c82; --s3:#c2a477; --s4:#b48d8b; --s5:#9c9187; --s6:#a49565;
+  --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --r-xl:22px; --r-lg:18px; --r-md:12px; --r-sm:9px;
+  --topbar-h:56px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161412; --surface:#201d1a; --surface-2:#26221f; --fill:#2e2a26; --tray:#2a2622;
+    --ink:#f3efea; --ink-2:#bfb6ac; --ink-3:#8d847a;
+    --line:#34302b; --line-strong:#48423c;
+    --accent:#d6a585; --accent-soft:#3b2d23;
+    --primary:#f3efea; --on-primary:#1a1714;
+    --danger:#e48b7d; --danger-soft:#3e2521; --on-danger:#1d1210;
+    --ring:rgba(214,165,133,.38);
+    --topbar:rgba(22,20,18,.80);
+    --shadow-card:0 1px 1px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.22);
+    --shadow-pop:0 12px 40px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+    --toast-bg:rgba(243,239,234,.96); --toast-ink:#1f1c19; --toast-act:#8a5a3b;
+    --paper-shadow:0 1px 2px rgba(0,0,0,.3),0 18px 50px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161412; --surface:#201d1a; --surface-2:#26221f; --fill:#2e2a26; --tray:#2a2622;
+  --ink:#f3efea; --ink-2:#bfb6ac; --ink-3:#8d847a;
+  --line:#34302b; --line-strong:#48423c;
+  --accent:#d6a585; --accent-soft:#3b2d23;
+  --primary:#f3efea; --on-primary:#1a1714;
+  --danger:#e48b7d; --danger-soft:#3e2521; --on-danger:#1d1210;
+  --ring:rgba(214,165,133,.38);
+  --topbar:rgba(22,20,18,.80);
+  --shadow-card:0 1px 1px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.22);
+  --shadow-pop:0 12px 40px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.3);
+  --toast-bg:rgba(243,239,234,.96); --toast-ink:#1f1c19; --toast-act:#8a5a3b;
+  --paper-shadow:0 1px 2px rgba(0,0,0,.3),0 18px 50px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{background:var(--bg)}
+body{color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ic{display:block;flex:none}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- top bar ---------- */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--topbar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:1440px;margin:0 auto;height:var(--topbar-h);display:flex;align-items:center;justify-content:space-between;gap:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.brand h1{margin:0;font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.brand p{margin:0;font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.save-state{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.save-state i{width:6px;height:6px;border-radius:50%;background:var(--s2)}
+.save-state.warn i{background:var(--danger)}
+
+/* ---------- segmented switch (narrow screens) ---------- */
+.seg-wrap{display:none;padding-block:12px 0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.seg{display:flex;background:var(--fill);border-radius:10px;padding:2px;max-width:420px;margin:0 auto}
+.seg button{flex:1;border:0;background:transparent;border-radius:8px;height:30px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+/* ---------- layout ---------- */
+.layout{max-width:1440px;margin:0 auto;padding-block:24px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px;align-items:start}
+.panel-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.panel-head h2{margin:0;font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-.02em}
+.panel-head p{margin:2px 0 0;font-size:12.5px;color:var(--ink-3)}
+.head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.editor{display:flex;flex-direction:column;gap:14px;min-width:0}
+.editor .panel-head{margin-bottom:0}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;padding:0 15px;border-radius:980px;border:1px solid transparent;background:var(--fill);color:var(--ink);font-size:13px;font-weight:500;white-space:nowrap;transition:background .15s,color .15s,transform .1s}
+.btn:hover{background:var(--line)}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--primary);color:var(--on-primary)}
+.btn-primary:hover{background:var(--primary);opacity:.88}
+.btn-quiet{background:transparent;color:var(--ink-2)}
+.btn-quiet:hover{background:var(--fill)}
+.btn-quiet.armed{background:var(--danger);color:var(--on-danger)}
+.btn:disabled{opacity:.5}
+.icon-btn{width:28px;height:28px;border-radius:50%;border:0;background:transparent;color:var(--ink-3);display:inline-grid;place-items:center;transition:background .15s,color .15s}
+.icon-btn:hover:not(:disabled){background:var(--fill);color:var(--ink)}
+.icon-btn.danger:hover:not(:disabled){background:var(--danger-soft);color:var(--danger)}
+.icon-btn:disabled{opacity:.3}
+.link-btn{border:0;background:none;padding:0;color:var(--accent);font-size:13px;font-weight:500}
+.link-btn:hover{text-decoration:underline}
+
+/* ---------- template menu ---------- */
+.menu-anchor{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 8px);z-index:25;width:280px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-pop);padding:6px}
+.menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:9px;padding:9px 12px}
+.menu button:hover,.menu button:focus-visible{background:var(--fill);outline:none}
+.menu strong{display:block;font-size:13.5px;font-weight:600}
+.menu span{display:block;font-size:12px;color:var(--ink-3)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 8px}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow-card)}
+.settings{padding:0}
+.settings summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;cursor:pointer}
+.settings summary::-webkit-details-marker{display:none}
+.settings summary strong{font-size:14px;font-weight:600}
+.settings summary span{font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settings summary .ic{color:var(--ink-3);transition:transform .2s}
+.settings[open] summary .ic{transform:rotate(180deg)}
+.settings-body{padding:2px 18px 18px;display:grid;gap:16px;border-top:1px solid var(--line);padding-top:16px}
+.field{display:grid;gap:6px}
+.field>span,.field-label{font-size:12px;font-weight:500;color:var(--ink-2)}
+.input{width:100%;min-width:0;height:36px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2);color:var(--ink);transition:border-color .15s,box-shadow .15s}
+.input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+textarea.input{height:auto;min-height:72px;padding:8px 12px;resize:vertical}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row .input{flex:1 1 160px;width:auto}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.switch-row p{margin:0;font-size:13px}
+.switch-row small{display:block;font-size:12px;color:var(--ink-3)}
+.switch{position:relative;width:44px;height:26px;flex:none}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.switch i{position:absolute;inset:0;border-radius:99px;background:var(--line-strong);transition:background .2s;pointer-events:none}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s}
+.switch input:checked+i{background:var(--accent)}
+.switch input:checked+i::after{transform:translateX(18px)}
+.switch input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.hchips{display:flex;flex-wrap:wrap;gap:6px}
+.hchip{display:inline-flex;align-items:center;gap:2px;height:28px;padding:0 4px 0 10px;border-radius:980px;background:var(--fill);font-size:12px}
+.hchip button{width:22px;height:22px;border:0;border-radius:50%;background:transparent;color:var(--ink-3);display:grid;place-items:center}
+.hchip button:hover{background:var(--line);color:var(--ink)}
+.hint{margin:0;font-size:12px;color:var(--ink-3)}
+.bulk summary{font-size:12.5px;color:var(--accent);cursor:pointer;width:max-content}
+.bulk[open] summary{margin-bottom:8px}
+.bulk .row{margin-top:8px}
+.nat-list{display:grid;gap:12px}
+.nat-year{font-size:12px;font-weight:600;color:var(--ink-2)}
+.nat-rows{list-style:none;margin:4px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0 18px}
+.nat-rows li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.nat-rows b{font-weight:500;min-width:0}
+.nat-rows span{color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.nat-rows li.is-past{color:var(--ink-3)}
+.nat-rows li.is-past span{color:var(--ink-3)}
+
+/* ---------- project card ---------- */
+.projects{display:flex;flex-direction:column;gap:14px}
+.proj{padding:18px 18px 14px;container-type:inline-size}
+.proj-head{display:flex;align-items:center;gap:10px}
+.swatch{width:12px;height:12px;border-radius:4px;background:var(--c);flex:none}
+.proj-title{flex:1;min-width:0;height:38px;padding:0 10px;margin-left:-10px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;font-family:var(--font-display);font-size:18px;font-weight:600;letter-spacing:-.015em}
+.proj-title:hover{border-color:var(--line)}
+.proj-title:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring);background:var(--surface-2)}
+.proj-title::placeholder{color:var(--ink-3);font-weight:500}
+.proj-tools{display:flex;gap:2px;flex:none}
+.proj-meta{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;margin:10px 0 4px;padding:10px 12px;border-radius:var(--r-md);background:var(--surface-2)}
+.proj-meta label{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;color:var(--ink-2)}
+.proj-meta input[type="date"]{height:32px;width:auto;min-width:140px;padding:0 10px}
+.proj-meta input[type="date"]:invalid{border-color:var(--accent);background:var(--accent-soft)}
+.proj-sum .need{color:var(--accent);font-weight:600}
+.proj-sum{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.proj-sum strong{color:var(--ink);font-weight:600}
+.proj-sum .sep{display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--ink-3);vertical-align:middle;margin:0 8px}
+.shift-note{margin:6px 0 0;font-size:12px;color:var(--accent)}
+.quick{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+
+.steps{list-style:none;margin:10px 0 0;padding:0}
+.step{display:grid;grid-template-columns:22px minmax(0,1fr);gap:6px 8px;padding:10px 0;border-top:1px solid var(--line)}
+.step-idx{font-size:12px;font-weight:600;color:var(--ink-3);text-align:center;line-height:34px;font-variant-numeric:tabular-nums}
+.is-ms .step-idx{color:var(--ink)}
+.step-main{min-width:0}
+.step-name{width:100%;height:34px;padding:0 8px;margin-left:-8px;border:1px solid transparent;border-radius:8px;background:transparent;font-size:14px;font-weight:500}
+.step-name:hover{border-color:var(--line)}
+.step-name:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring);background:var(--surface-2)}
+.step-name::placeholder,.step-note::placeholder{color:var(--ink-3);font-weight:400}
+.step-sub{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;min-width:0}
+.step-range{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.step-note{flex:1 1 140px;min-width:0;height:26px;padding:0 8px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:12px;color:var(--ink-2)}
+.step-note:hover{border-color:var(--line)}
+.step-note:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring);background:var(--surface-2)}
+.step-ctrl{grid-column:2;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.stepper{display:inline-flex;align-items:center;height:30px;border:1px solid var(--line);border-radius:980px;background:var(--surface-2)}
+.stepper button{width:28px;height:28px;border:0;background:transparent;border-radius:50%;color:var(--ink-2);font-size:15px;line-height:1}
+.stepper button:hover{background:var(--fill);color:var(--ink)}
+.stepper input{width:34px;height:28px;border:0;background:transparent;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+.stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.stepper input:focus{outline:none}
+.stepper:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+.unit{font-size:12px;color:var(--ink-3);margin-left:-4px}
+.tchip{height:28px;padding:0 11px;border-radius:980px;border:1px solid var(--line);background:transparent;color:var(--ink-3);font-size:12px;font-weight:500;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
+.tchip:hover{border-color:var(--line-strong);color:var(--ink-2)}
+.tchip.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.ms-tag{height:24px;line-height:24px;padding:0 10px;border-radius:980px;background:var(--fill);font-size:11.5px;color:var(--ink-2)}
+.step-tools{display:flex;gap:0;margin-left:auto}
+.proj-foot{display:flex;gap:6px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line)}
+.proj-foot .btn{height:30px;padding:0 12px;font-size:12.5px;background:transparent;color:var(--accent)}
+.proj-foot .btn:hover{background:var(--accent-soft)}
+@container (min-width: 520px){
+  .step{grid-template-columns:22px minmax(0,1fr) auto}
+  .step-ctrl{grid-column:3;grid-row:1;align-self:start;flex-wrap:nowrap}
+  .step-tools{margin-left:0}
+}
+.empty{padding:36px 24px;text-align:center}
+.empty h3{margin:0 0 4px;font-size:16px;font-weight:600}
+.empty p{margin:0 0 16px;color:var(--ink-3);font-size:13px}
+.empty .row{justify-content:center}
+
+/* ---------- preview tray ---------- */
+.preview{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--topbar-h) + 16px);max-height:calc(100dvh - var(--topbar-h) - 32px - env(safe-area-inset-top,0px));display:flex;flex-direction:column;min-width:0}
+.preview .panel-head{flex:none}
+.paper-scroll{flex:1;min-height:0;overflow:auto;background:var(--tray);border-radius:var(--r-xl);padding:28px}
+
+/* ---------- paper (exported sheet) ---------- */
+.paper{background:var(--paper);color:var(--paper-ink);border-radius:14px;box-shadow:var(--paper-shadow);padding:40px 40px 28px;max-width:980px;margin:0 auto;font-family:var(--font-ui);font-variant-numeric:tabular-nums}
+.paper-eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--paper-accent);font-weight:600}
+.paper-title{font-family:var(--font-display);font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-.025em;margin:6px 0 6px;text-wrap:balance;word-break:break-word}
+.paper-sub{font-size:12px;color:var(--paper-ink-2)}
+.paper-stats{display:flex;flex-wrap:wrap;gap:12px 36px;margin-top:22px;padding-top:16px;border-top:1px solid var(--paper-line)}
+.paper-stats div{display:grid;gap:2px}
+.paper-stats span{font-size:11px;color:var(--paper-ink-3);letter-spacing:.02em}
+.paper-stats strong{font-size:15px;font-weight:600}
+.pj{margin-top:32px}
+.pj-head{display:flex;align-items:baseline;justify-content:space-between;gap:6px 16px;flex-wrap:wrap;margin-bottom:10px}
+.pj-name{margin:0;display:flex;align-items:center;gap:9px;font-size:17px;font-weight:700;letter-spacing:-.01em;min-width:0;word-break:break-word}
+.pj-dot{width:11px;height:11px;border-radius:3px;background:var(--c);flex:none}
+.pj-range{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--paper-ink-2)}
+.pj-pill{padding:2px 9px;border-radius:980px;background:var(--paper-off);color:var(--paper-ink);font-weight:600}
+.pj-empty{padding:16px;border-radius:10px;background:var(--paper-soft);font-size:12.5px;color:var(--paper-ink-3)}
+.gantt-scroll{overflow-x:auto}
+.gantt{--lw:250px;min-width:calc(var(--lw) + var(--n) * 15px)}
+.g-head{display:grid;grid-template-columns:var(--lw) minmax(0,1fr);border-bottom:1px solid var(--paper-line)}
+.g-head-label{align-self:end;padding:0 0 7px;font-size:11px;color:var(--paper-ink-3)}
+.g-scale{position:relative;height:44px;overflow:hidden}
+.g-month{position:absolute;top:0;height:18px;line-height:18px;padding-left:5px;border-left:1px solid var(--paper-line);font-size:11px;font-weight:600;color:var(--paper-ink-2);white-space:nowrap;overflow:hidden}
+.g-day{position:absolute;top:18px;height:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.15;color:var(--paper-ink-2)}
+.g-day em{font-style:normal;font-size:9px;color:var(--paper-ink-3)}
+.g-day.is-off{background:var(--paper-off);color:var(--paper-ink-3)}
+.g-day.is-hol{background:var(--paper-hol);color:var(--paper-today)}
+.g-tick{position:absolute;top:22px;padding-left:4px;border-left:1px solid var(--paper-line);font-size:10px;color:var(--paper-ink-2);white-space:nowrap}
+.g-body{position:relative}
+.g-overlay{position:absolute;top:0;bottom:0;left:var(--lw);right:0}
+.g-off{position:absolute;top:0;bottom:0;background:var(--paper-off)}
+.g-off.is-hol{background:var(--paper-hol)}
+.g-week{position:absolute;top:0;bottom:0;width:0;border-left:1px solid var(--paper-line)}
+.g-today{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--paper-today)}
+.g-row{position:relative;display:grid;grid-template-columns:var(--lw) minmax(0,1fr);border-bottom:1px solid var(--paper-line)}
+.g-label{padding:9px 16px 9px 0;min-width:0;background:var(--paper)}
+.g-name{display:flex;gap:8px;align-items:baseline;font-size:13px;font-weight:600;line-height:1.4}
+.g-name b{width:14px;flex:none;font-size:11px;font-weight:500;color:var(--paper-ink-3);text-align:right}
+.g-name span{min-width:0;word-break:break-word}
+.g-name .untitled{color:var(--paper-ink-3);font-weight:500}
+.g-meta,.g-note{margin-left:22px;font-size:11px;line-height:1.5;color:var(--paper-ink-2)}
+.g-meta .rv{color:var(--paper-review);font-weight:600}
+.g-meta .nw{white-space:nowrap}
+.g-note{color:var(--paper-ink-3)}
+.g-track{position:relative;min-height:42px}
+.g-bar{position:absolute;top:50%;height:14px;margin-top:-7px;border-radius:4px;background:var(--c)}
+.g-link{position:absolute;top:50%;height:0;border-top:1.5px dashed var(--c)}
+.g-review{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--paper-review);border:2px solid var(--paper)}
+.g-ms{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:2px;background:var(--paper-ink);transform:rotate(45deg)}
+.is-ms-row .g-name{font-weight:700}
+.pj-hols{margin:8px 0 0;font-size:11px;line-height:1.6;color:var(--paper-ink-2)}
+.pj-hols b{font-weight:600;color:var(--paper-today)}
+.u-list{list-style:none;margin:6px 0 0;padding:0}
+.u-list li{padding:9px 0;border-bottom:1px solid var(--paper-line)}
+.paper-foot{display:flex;align-items:center;justify-content:space-between;gap:10px 20px;flex-wrap:wrap;margin-top:28px;padding-top:14px;border-top:1px solid var(--paper-line);font-size:11px;color:var(--paper-ink-2)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.lg{display:inline-block;flex:none}
+.lg-bar{width:18px;height:8px;border-radius:2px;background:var(--s1)}
+.lg-rv{width:9px;height:9px;border-radius:50%;background:var(--paper-review)}
+.lg-ms{width:8px;height:8px;border-radius:1px;background:var(--paper-ink);transform:rotate(45deg)}
+.lg-off{width:12px;height:12px;border-radius:2px;background:var(--paper-off);border:1px solid var(--paper-line)}
+.lg-hol{width:12px;height:12px;border-radius:2px;background:var(--paper-hol);border:1px solid var(--paper-line)}
+.lg-today{width:0;height:12px;border-left:1.5px solid var(--paper-today)}
+.paper-brand{color:var(--paper-ink-3)}
+
+/* ---------- toast & modal ---------- */
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:11px 12px 11px 18px;border-radius:980px;background:var(--toast-bg);color:var(--toast-ink);font-size:13px;box-shadow:var(--shadow-pop);transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast button{border:0;background:transparent;color:var(--toast-act);font-weight:600;font-size:13px;padding:2px 8px;border-radius:980px}
+.modal{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px));background:rgba(20,16,12,.45)}
+.modal-card{width:min(720px,100%);max-height:calc(100dvh - 48px);overflow:auto;background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow-pop);padding:20px;display:grid;gap:12px}
+.modal-card h3{margin:0;font-size:16px;font-weight:600}
+.modal-card p{margin:0;font-size:13px;color:var(--ink-2)}
+.modal-card img{width:100%;border-radius:10px;border:1px solid var(--line)}
+.modal-card textarea{min-height:240px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.modal-card .row{justify-content:flex-end}
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 999px){
+  .seg-wrap{display:block}
+  .layout{grid-template-columns:minmax(0,1fr);padding-top:16px}
+  .layout[data-view="edit"] .preview{display:none}
+  .layout[data-view="preview"] .editor{display:none}
+  .preview{position:static;max-height:none}
+  .paper-scroll{padding:14px;border-radius:var(--r-lg)}
+}
+@media (max-width: 600px){
+  .brand p{display:none}
+  .paper{padding:24px 18px 20px}
+  .paper-title{font-size:23px}
+  .gantt{--lw:160px}
+  .head-actions .btn span{display:none}
+  .head-actions .btn{padding:0 11px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition:none!important}
+}
+</style>
+
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4.5h6M4.5 8h7M6.5 11.5h7"/></svg></span>
+      <div>
+        <h1>專案時程表產生器</h1>
+        <p>輸入起始日與工作天數，自動避開週末與國定假日</p>
+      </div>
+    </div>
+    <div class="save-state" id="save-state" role="status"><i></i><span>已自動儲存在此瀏覽器</span></div>
+  </div>
+</header>
+
+<div class="seg-wrap">
+  <div class="seg" role="group" aria-label="切換檢視">
+    <button type="button" data-act="view" data-view="edit" aria-pressed="true">編輯</button>
+    <button type="button" data-act="view" data-view="preview" aria-pressed="false">預覽</button>
+  </div>
+</div>
+
+<main class="layout" id="layout" data-view="edit">
+  <section class="editor" aria-labelledby="editor-h">
+    <div class="panel-head">
+      <div>
+        <h2 id="editor-h">專案內容</h2>
+        <p>改起始日或天數，右側日期與甘特圖會即時更新</p>
+      </div>
+      <div class="head-actions">
+        <button type="button" class="btn btn-quiet" data-act="clear" id="clear-btn">清空全部</button>
+        <div class="menu-anchor">
+          <button type="button" class="btn btn-primary" data-act="menu" aria-haspopup="true" aria-expanded="false" id="menu-btn">
+            <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>新增專案
+          </button>
+          <div class="menu" id="tpl-menu" role="menu" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <details class="card settings" id="settings">
+      <summary>
+        <div style="min-width:0;display:grid">
+          <strong>文件與工作日設定</strong>
+          <span id="settings-sum"></span>
+        </div>
+        <svg class="ic" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg>
+      </summary>
+      <div class="settings-body">
+        <label class="field">
+          <span>文件標題（顯示在預覽與匯出圖片上）</span>
+          <input class="input" id="doc-title" data-field="docTitle" autocomplete="off" placeholder="例：NCS Ultra 上市視覺時程">
+        </label>
+        <div class="switch-row">
+          <div>
+            <p>排除週六、週日</p>
+            <small>關閉後，週末也算工作天</small>
+          </div>
+          <label class="switch"><input type="checkbox" id="skip-weekends" data-field="skipWeekends" aria-label="排除週六、週日"><i></i></label>
+        </div>
+        <div class="field">
+          <div class="switch-row">
+            <div>
+              <p>排除國定假日（含補假）</p>
+              <small>內建 2026–2027 年，依行政院人事行政總處辦公日曆表</small>
+            </div>
+            <label class="switch"><input type="checkbox" id="skip-national" data-field="skipNational" aria-label="排除國定假日"><i></i></label>
+          </div>
+          <details class="bulk">
+            <summary>查看內建的國定假日</summary>
+            <div class="nat-list" id="nat-list"></div>
+          </details>
+        </div>
+        <div class="field">
+          <span class="field-label">其他休假日（公司休假、颱風假等，這些日子不排工作）</span>
+          <div class="row">
+            <input type="date" class="input" id="hol-date" aria-label="選擇休假日">
+            <button type="button" class="btn" data-act="hol-add">加入</button>
+          </div>
+          <div class="hchips" id="hol-chips"></div>
+          <details class="bulk">
+            <summary>一次貼上多個日期</summary>
+            <textarea class="input" id="hol-bulk" placeholder="每行或用逗號分隔，例如：&#10;2026/12/25&#10;2027-01-01"></textarea>
+            <div class="row"><button type="button" class="btn" data-act="hol-bulk">全部加入</button></div>
+          </details>
+          <p class="hint">內建國定假日只到 2027 年底。2028 年起的國定假日，請等人事行政總處（dgpa.gov.tw）公告辦公日曆表後加在這裡。</p>
+        </div>
+      </div>
+    </details>
+
+    <div class="projects" id="projects"></div>
+  </section>
+
+  <section class="preview" aria-labelledby="preview-h">
+    <div class="panel-head">
+      <div>
+        <h2 id="preview-h">預覽</h2>
+        <p>這張就是匯出的圖片</p>
+      </div>
+      <div class="head-actions">
+        <button type="button" class="btn" data-act="copy" title="複製純文字，可貼到 LINE 或 Email" aria-label="複製文字">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="7.5" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4.5A1.5 1.5 0 0 0 3 4v5.5A1.5 1.5 0 0 0 4.5 11h1"/></svg><span>複製文字</span>
+        </button>
+        <button type="button" class="btn" data-act="csv" title="下載 CSV，可用 Excel 開啟" aria-label="下載 CSV">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M6.5 6.5V13"/></svg><span>CSV</span>
+        </button>
+        <button type="button" class="btn btn-primary" data-act="png" aria-label="下載圖片">
+          <svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg><span>下載圖片</span>
+        </button>
+      </div>
+    </div>
+    <div class="paper-scroll" id="paper-scroll">
+      <article class="paper" id="paper" aria-live="polite"></article>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button type="button" id="toast-act" hidden></button></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-h">
+    <h3 id="modal-h"></h3>
+    <p id="modal-p"></p>
+    <div id="modal-body"></div>
+    <div class="row"><button type="button" class="btn btn-primary" data-act="modal-close">完成</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+const STORE_KEY = 'timeline-generator.v1';
+const DOW = '日一二三四五六';
+const SERIES_N = 6;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+const BLANK_HINTS = ['例：需求訪談與資料蒐集', '例：設計提案與初稿', '例：修訂與定稿'];
+
+// every working step starts at 1 day; the start date stays empty until the user picks one
+const TEMPLATES = {
+  kv: { name: '主視覺', title: '主視覺', steps: [
+    { name: '主視覺概念提案', review: true },
+    { name: '主視覺設計發想與初稿（產品為示意圖）', review: true },
+    { name: '產品攝影與修圖' },
+    { name: '主視覺合成（V1）', review: true },
+    { name: '第一輪修提（V2）', review: true },
+    { name: '第二輪修提（V3）', review: true },
+    { name: '多語系版本製作' },
+    { type: 'milestone', name: '完稿' }
+  ]},
+  scene: { name: '情境照', title: '情境照', steps: [
+    { name: '情境照風格概念提案', review: true },
+    { name: '拍攝環境規劃' },
+    { name: '產品攝影與修圖（V1）', review: true },
+    { name: '第一輪修提（V2）', review: true },
+    { name: '第二輪修提（V3）', review: true },
+    { type: 'milestone', name: '完稿' }
+  ]},
+  blank: { name: '空白專案', title: '', steps: [
+    {}, {}, {},
+    { type: 'milestone', name: '完稿' }
+  ]}
+};
+
+// 國定假日期間（含補假，不含一般週末），沿用 badminton-app src/schedule.js 的 HOLIDAY_PERIODS（schedule.test.js 驗證的那份）。
+// 來源：行政院人事行政總處 115、116 年政府行政機關辦公日曆表
+// 補假規則：放假日逢週六於前一個上班日補假，逢週日於次一個上班日補假。
+// 唯一不同：2026 元旦依日曆表只放 1/1（badminton-app 那筆未對照日曆表，寫成 1/1–1/2）。
+const NATIONAL_FROM = '2026-01-01', NATIONAL_TO = '2027-12-31';
+const HOLIDAY_PERIODS = [
+  // --- 2026（民國 115 年）---
+  { name: '元旦',            start: '2026-01-01', end: '2026-01-01' }, // 週四
+  { name: '春節',            start: '2026-02-16', end: '2026-02-22' },
+  { name: '和平紀念日',      start: '2026-02-27', end: '2026-02-28' }, // 週六，週五補假
+  { name: '兒童節及清明節',  start: '2026-04-03', end: '2026-04-06' }, // 週六、週日，週五與週一補假
+  { name: '勞動節',          start: '2026-05-01', end: '2026-05-01' }, // 週五
+  { name: '端午節',          start: '2026-06-19', end: '2026-06-19' }, // 週五
+  { name: '中秋節',          start: '2026-09-25', end: '2026-09-25' }, // 週五
+  { name: '教師節',          start: '2026-09-28', end: '2026-09-28' }, // 週一
+  { name: '國慶日',          start: '2026-10-09', end: '2026-10-10' }, // 週六，週五補假
+  { name: '光復節',          start: '2026-10-25', end: '2026-10-26' }, // 週日，週一補假
+  { name: '行憲紀念日',      start: '2026-12-25', end: '2026-12-25' }, // 週五
+
+  // --- 2027（民國 116 年）---
+  { name: '元旦',            start: '2027-01-01', end: '2027-01-01' }, // 週五
+  { name: '春節',            start: '2027-02-04', end: '2027-02-10' }, // 小年夜週四 ~ 補假週三
+  { name: '和平紀念日',      start: '2027-02-28', end: '2027-03-01' }, // 週日，週一補假
+  { name: '兒童節及清明節',  start: '2027-04-04', end: '2027-04-06' }, // 週日、週一，週二補假
+  { name: '勞動節',          start: '2027-04-30', end: '2027-05-01' }, // 週六，週五補假
+  { name: '端午節',          start: '2027-06-09', end: '2027-06-09' }, // 週三
+  { name: '中秋節',          start: '2027-09-15', end: '2027-09-15' }, // 週三
+  { name: '教師節',          start: '2027-09-28', end: '2027-09-28' }, // 週二
+  { name: '國慶日',          start: '2027-10-10', end: '2027-10-11' }, // 週日，週一補假
+  { name: '光復節',          start: '2027-10-25', end: '2027-10-25' }, // 週一
+  { name: '行憲紀念日',      start: '2027-12-24', end: '2027-12-25' }, // 週六，週五補假
+  { name: '117 年元旦',      start: '2027-12-31', end: '2028-01-01' }, // 週六，週五補假
+];
+
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = p => p + Math.random().toString(36).slice(2, 10);
+const clampDays = v => Math.min(365, Math.max(1, parseInt(v, 10) || 1));
+
+/* ---------- dates as whole day numbers (UTC) ---------- */
+const pad = n => String(n).padStart(2, '0');
+const isoOf = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+const dayOf = iso => { const [y, m, d] = iso.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const parts = n => { const t = new Date(n * 864e5); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), w: t.getUTCDay() }; };
+const isoOfDay = n => { const p = parts(n); return isoOf(p.y, p.m, p.d); };
+const md = n => { const p = parts(n); return `${p.m}/${p.d}（${DOW[p.w]}）`; };
+const ymd = n => { const p = parts(n); return `${p.y}/${p.m}/${p.d}（${DOW[p.w]}）`; };
+const weekday = n => (((n + 4) % 7) + 7) % 7; // day 0 = 1970-01-01, a Thursday
+const todayDay = () => { const t = new Date(); return Math.round(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) / 864e5); };
+function validIso(s) {
+  if (!ISO_RE.test(s)) return false;
+  const p = parts(dayOf(s));
+  return isoOf(p.y, p.m, p.d) === s;
+}
+
+// day number → holiday name, expanded once from HOLIDAY_PERIODS
+const NATIONAL = new Map();
+for (const h of HOLIDAY_PERIODS) for (let n = dayOf(h.start); n <= dayOf(h.end); n++) NATIONAL.set(n, h.name);
+const periodText = h => h.start === h.end ? md(dayOf(h.start)) : `${md(dayOf(h.start))} – ${md(dayOf(h.end))}`;
+
+/* ---------- state ---------- */
+let holidaySet = new Set();
+let state = null;
+let undoSnap = null;
+state = load() || defaultState();
+
+function defaultState() {
+  const s = { docTitle: '專案時程規劃書', skipWeekends: true, skipNational: true, holidays: [], projects: [] };
+  s.projects.push(makeProject('blank', s.projects));
+  return s;
+}
+
+function nextColor(projects) {
+  const used = new Set(projects.map(p => p.color));
+  for (let i = 0; i < SERIES_N; i++) if (!used.has(i)) return i;
+  return projects.length % SERIES_N;
+}
+
+function makeProject(key, projects) {
+  const t = TEMPLATES[key];
+  return {
+    id: uid('p'),
+    title: t.title,
+    start: '',
+    color: nextColor(projects),
+    steps: t.steps.map(s => makeStep(s))
+  };
+}
+
+function makeStep(s = {}) {
+  const ms = s.type === 'milestone';
+  return { id: uid('s'), type: ms ? 'milestone' : 'task', name: s.name || '', days: ms ? 0 : clampDays(s.days), review: !!s.review, note: s.note || '' };
+}
+
+function sanitize(d) {
+  if (!d || !Array.isArray(d.projects)) return null;
+  const ids = new Set();
+  const freshId = (id, p) => (typeof id === 'string' && !ids.has(id) ? (ids.add(id), id) : uid(p));
+  return {
+    docTitle: typeof d.docTitle === 'string' ? d.docTitle : '專案時程規劃書',
+    skipWeekends: d.skipWeekends !== false,
+    skipNational: d.skipNational !== false,
+    holidays: Array.isArray(d.holidays) ? [...new Set(d.holidays.filter(validIso))].sort() : [],
+    projects: d.projects.filter(p => p && Array.isArray(p.steps)).map((p, i) => ({
+      id: freshId(p.id, 'p'),
+      title: String(p.title ?? ''),
+      start: validIso(p.start) ? p.start : '',
+      color: Number.isInteger(p.color) ? ((p.color % SERIES_N) + SERIES_N) % SERIES_N : i % SERIES_N,
+      steps: p.steps.filter(Boolean).map(s => ({
+        id: freshId(s.id, 's'),
+        type: s.type === 'milestone' ? 'milestone' : 'task',
+        name: String(s.name ?? ''),
+        days: s.type === 'milestone' ? 0 : clampDays(s.days),
+        review: !!s.review,
+        note: String(s.note ?? '')
+      }))
+    }))
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    return raw ? sanitize(JSON.parse(raw)) : null;
+  } catch { return null; }
+}
+
+function save() {
+  const el = $('#save-state');
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    el.classList.remove('warn');
+    el.lastElementChild.textContent = '已自動儲存在此瀏覽器';
+  } catch {
+    el.classList.add('warn');
+    el.lastElementChild.textContent = '此瀏覽器無法自動儲存，請用匯出保存';
+  }
+}
+
+function snapshot() { undoSnap = JSON.stringify(state); }
+function undo() {
+  if (!undoSnap) return;
+  state = sanitize(JSON.parse(undoSnap));
+  undoSnap = null;
+  renderAll();
+  save();
+  toast('已復原');
+}
+
+/* ---------- scheduling ---------- */
+function rebuildHolidays() { holidaySet = new Set((state?.holidays || []).map(dayOf)); }
+const isNational = n => state.skipNational && NATIONAL.has(n);
+function isWorking(n) {
+  if (state.skipWeekends) { const w = weekday(n); if (w === 0 || w === 6) return false; }
+  if (isNational(n)) return false;
+  return !holidaySet.has(n);
+}
+// why a day is off; a holiday that lands on a weekend is named by the holiday
+function offReason(n) {
+  if (isNational(n)) return NATIONAL.get(n);
+  if (holidaySet.has(n)) return '休假日';
+  return '週末';
+}
+function nextWorking(n) {
+  for (let i = 0; i < 3700; i++, n++) if (isWorking(n)) return n;
+  return n;
+}
+
+function schedule(p) {
+  const tasks = p.steps.filter(s => s.type !== 'milestone');
+  if (!validIso(p.start)) return { noStart: true, hasTask: tasks.length > 0, total: tasks.reduce((a, s) => a + clampDays(s.days), 0), rows: null };
+  const requested = dayOf(p.start);
+  const start = nextWorking(requested);
+  let cur = start, lastEnd = null, total = 0, end = start, hasTask = false;
+  const rows = p.steps.map(s => {
+    if (s.type === 'milestone') {
+      // delivery lands on the working day after the previous step ends
+      const d = lastEnd === null ? start : nextWorking(lastEnd + 1);
+      end = Math.max(end, d);
+      return { kind: 'ms', date: d };
+    }
+    const n = clampDays(s.days), days = [];
+    for (let c = cur, g = 0; days.length < n && g < 4000; c++, g++) if (isWorking(c)) days.push(c);
+    const r = { kind: 'task', start: days[0], end: days[days.length - 1], days, n: days.length };
+    lastEnd = r.end;
+    cur = nextWorking(r.end + 1);
+    total += r.n;
+    end = Math.max(end, r.end);
+    hasTask = true;
+    return r;
+  });
+  return { requested, start, shifted: requested !== start, rows, total, end, hasTask };
+}
+
+const rangeText = r => r.kind === 'ms' ? md(r.date) : (r.start === r.end ? md(r.start) : `${md(r.start)} – ${md(r.end)}`);
+const isPristine = p => !p.title.trim() && p.steps.every(s => (s.type === 'milestone' || !s.name.trim()) && !s.note.trim());
+const taskCount = t => t.steps.filter(s => s.type !== 'milestone').length;
+
+/* ---------- icons ---------- */
+const ICONS = {
+  up: '<path d="M4 10l4-4 4 4"/>',
+  down: '<path d="M4 6l4 4 4-4"/>',
+  dup: '<rect x="5.5" y="5.5" width="7.5" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4.5A1.5 1.5 0 0 0 3 4v5.5A1.5 1.5 0 0 0 4.5 11h1"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"/>',
+  x: '<path d="M5 5l6 6M11 5l-6 6"/>'
+};
+const icon = (n, s = 16) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+
+/* ---------- editor ---------- */
+function renderMenu() {
+  $('#tpl-menu').innerHTML = Object.entries(TEMPLATES).map(([k, t]) => `
+    ${k === 'blank' ? '<hr>' : ''}
+    <button type="button" role="menuitem" data-act="tpl" data-tpl="${k}">
+      <strong>${esc(t.name)}</strong>
+      <span>${k === 'blank' ? '從空白階段開始，自行填寫流程' : `${taskCount(t)} 個階段 · 每階段預設 1 天`}</span>
+    </button>`).join('');
+}
+
+function stepHTML(p, s, i, no) {
+  const ms = s.type === 'milestone';
+  const ph = ms ? '里程碑名稱' : (BLANK_HINTS[i] || '階段名稱');
+  const last = p.steps.length - 1;
+  return `<li class="step${ms ? ' is-ms' : ''}" data-sid="${s.id}">
+    <span class="step-idx" aria-hidden="true">${ms ? '◆' : no}</span>
+    <div class="step-main">
+      <input class="step-name" id="name-${s.id}" data-field="name" value="${esc(s.name)}" placeholder="${esc(ph)}" aria-label="${ms ? '里程碑名稱' : `第 ${no} 階段名稱`}" autocomplete="off" enterkeyhint="next">
+      <div class="step-sub">
+        <span class="step-range" data-range></span>
+        <input class="step-note" id="note-${s.id}" data-field="note" value="${esc(s.note)}" placeholder="備註（選填）" aria-label="備註" autocomplete="off">
+      </div>
+    </div>
+    <div class="step-ctrl">
+      ${ms ? '<span class="ms-tag">里程碑</span>' : `
+      <div class="stepper" role="group" aria-label="工作天數">
+        <button type="button" data-act="s-dec" aria-label="減少一天">−</button>
+        <input type="number" inputmode="numeric" min="1" max="365" id="days-${s.id}" data-field="days" value="${s.days}" aria-label="工作天數">
+        <button type="button" data-act="s-inc" aria-label="增加一天">+</button>
+      </div><span class="unit">天</span>
+      <button type="button" class="tchip${s.review ? ' on' : ''}" data-act="s-review" aria-pressed="${s.review}">含主管確認</button>`}
+      <div class="step-tools">
+        <button type="button" class="icon-btn" data-act="s-up" aria-label="上移" ${i === 0 ? 'disabled' : ''}>${icon('up', 14)}</button>
+        <button type="button" class="icon-btn" data-act="s-down" aria-label="下移" ${i === last ? 'disabled' : ''}>${icon('down', 14)}</button>
+        <button type="button" class="icon-btn danger" data-act="s-del" aria-label="刪除此階段">${icon('x', 14)}</button>
+      </div>
+    </div>
+  </li>`;
+}
+
+function projectHTML(p, i) {
+  let no = 0;
+  const last = state.projects.length - 1;
+  return `<article class="card proj" data-pid="${p.id}" style="--c:var(--s${p.color + 1})">
+    <div class="proj-head">
+      <span class="swatch" aria-hidden="true"></span>
+      <input class="proj-title" id="title-${p.id}" data-field="title" value="${esc(p.title)}" placeholder="專案名稱" aria-label="專案名稱" autocomplete="off">
+      <div class="proj-tools">
+        <button type="button" class="icon-btn" data-act="p-up" aria-label="專案上移" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button>
+        <button type="button" class="icon-btn" data-act="p-down" aria-label="專案下移" ${i === last ? 'disabled' : ''}>${icon('down')}</button>
+        <button type="button" class="icon-btn" data-act="p-dup" aria-label="複製這個專案">${icon('dup')}</button>
+        <button type="button" class="icon-btn danger" data-act="p-del" aria-label="刪除這個專案">${icon('trash')}</button>
+      </div>
+    </div>
+    <div class="proj-meta">
+      <label>起始日 <input type="date" class="input" id="start-${p.id}" data-field="start" value="${esc(p.start)}" required></label>
+      <span class="proj-sum" data-summary></span>
+    </div>
+    <p class="shift-note" data-shift hidden></p>
+    <p class="shift-note" data-cover hidden></p>
+    <div class="quick" data-quick hidden>
+      <span>快速套用範本</span>
+      <button type="button" class="link-btn" data-act="tpl" data-tpl="kv" data-target="${p.id}">主視覺</button>
+      <button type="button" class="link-btn" data-act="tpl" data-tpl="scene" data-target="${p.id}">情境照</button>
+    </div>
+    <ol class="steps">
+      ${p.steps.map((s, j) => stepHTML(p, s, j, s.type === 'milestone' ? 0 : ++no)).join('')}
+    </ol>
+    <div class="proj-foot">
+      <button type="button" class="btn" data-act="add-task">＋ 新增階段</button>
+      <button type="button" class="btn" data-act="add-ms">＋ 新增里程碑</button>
+    </div>
+  </article>`;
+}
+
+function renderEditor(focusSel) {
+  const host = $('#projects');
+  if (!state.projects.length) {
+    host.innerHTML = `<div class="card empty">
+      <h3>還沒有專案</h3>
+      <p>從空白專案開始，或直接套用常用流程</p>
+      <div class="row">
+        <button type="button" class="btn btn-primary" data-act="tpl" data-tpl="kv">主視覺</button>
+        <button type="button" class="btn" data-act="tpl" data-tpl="scene">情境照</button>
+        <button type="button" class="btn" data-act="tpl" data-tpl="blank">空白專案</button>
+      </div>
+    </div>`;
+  } else {
+    host.innerHTML = state.projects.map(projectHTML).join('');
+  }
+  if (focusSel) { const el = $(focusSel); if (el) el.focus({ preventScroll: false }); }
+}
+
+function renderSettings() {
+  $('#doc-title').value = state.docTitle;
+  $('#skip-weekends').checked = state.skipWeekends;
+  $('#skip-national').checked = state.skipNational;
+  $('#hol-chips').innerHTML = state.holidays.map(h => `<span class="hchip num">${ymd(dayOf(h))}<button type="button" data-act="hol-del" data-date="${h}" aria-label="移除 ${h}">${icon('x', 12)}</button></span>`).join('');
+  updateSettingsSummary();
+}
+function updateSettingsSummary() {
+  $('#settings-sum').textContent = `${state.docTitle.trim() || '未命名文件'} · ${state.skipWeekends ? '排除週六日' : '含週六日'} · ${state.skipNational ? '排除國定假日' : '含國定假日'} · ${state.holidays.length} 個其他休假日`;
+}
+// built-in holidays grouped by year; ones already over are dimmed
+function renderNational() {
+  const td = todayDay(), byYear = new Map();
+  for (const h of HOLIDAY_PERIODS) {
+    const y = h.start.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(h);
+  }
+  $('#nat-list').innerHTML = [...byYear].map(([y, list]) => `<div>
+    <div class="nat-year">${y} 年</div>
+    <ul class="nat-rows">${list.map(h => `<li${dayOf(h.end) < td ? ' class="is-past"' : ''}><b>${esc(h.name)}</b><span>${periodText(h)}</span></li>`).join('')}</ul>
+  </div>`).join('');
+}
+
+/* ---------- live refresh ---------- */
+function refresh() {
+  rebuildHolidays();
+  const sched = new Map(state.projects.map(p => [p.id, schedule(p)]));
+  for (const p of state.projects) {
+    const card = document.querySelector(`[data-pid="${p.id}"]`);
+    if (!card) continue;
+    const s = sched.get(p.id);
+    card.querySelector('[data-summary]').innerHTML = s.noStart
+      ? `<span class="need">請選擇起始日</span>${s.hasTask ? `<span class="sep"></span>共 <strong>${s.total}</strong> 個工作天` : ''}`
+      : s.hasTask
+        ? `預計完稿 <strong>${md(s.end)}</strong><span class="sep"></span>共 <strong>${s.total}</strong> 個工作天`
+        : '尚未設定工作階段';
+    const sn = card.querySelector('[data-shift]');
+    sn.hidden = s.noStart || !s.shifted;
+    if (s.shifted) sn.textContent = `起始日 ${md(s.requested)} 是${offReason(s.requested)}，已順延到 ${md(s.start)} 開工`;
+    const cn = card.querySelector('[data-cover]');
+    cn.hidden = !state.skipNational || s.noStart || (s.start >= dayOf(NATIONAL_FROM) && s.end <= dayOf(NATIONAL_TO));
+    if (!cn.hidden) cn.textContent = '排程超出 2026–2027 年，範圍外的國定假日沒有內建，請在設定的「其他休假日」手動加入';
+    card.querySelector('[data-quick]').hidden = !isPristine(p);
+    p.steps.forEach((st, i) => {
+      const el = card.querySelector(`[data-sid="${st.id}"] [data-range]`);
+      if (el) el.textContent = s.noStart ? '' : rangeText(s.rows[i]);
+    });
+  }
+  renderPaper(sched);
+  updateSettingsSummary();
+}
+
+function renderAll(focusSel) {
+  renderSettings();
+  renderEditor(focusSel);
+  refresh();
+}
+
+function commit() { refresh(); save(); }
+
+/* ---------- paper / gantt ---------- */
+let todayShown = false, holShown = false;
+
+function ganttHTML(p, s) {
+  const N = s.end - s.start + 1;
+  const pct = x => `${(x / N * 100).toFixed(4)}%`;
+  const td = todayDay();
+
+  let months = '';
+  for (let i = 0; i < N;) {
+    const p0 = parts(s.start + i);
+    let j = i;
+    while (j + 1 < N && parts(s.start + j + 1).m === p0.m) j++;
+    const len = j - i + 1;
+    const label = (i === 0 || p0.m === 1) ? `${p0.y} 年 ${p0.m} 月` : `${p0.m} 月`;
+    months += `<span class="g-month" style="left:${pct(i)};width:${pct(len)}">${len >= 3 ? label : ''}</span>`;
+    i = j + 1;
+  }
+
+  let days = '';
+  for (let i = 0; i < N; i++) {
+    const d = s.start + i, q = parts(d);
+    const hol = isNational(d);
+    if (N <= 31) days += `<span class="g-day${isWorking(d) ? '' : ' is-off'}${hol ? ' is-hol' : ''}"${hol ? ` title="${esc(NATIONAL.get(d))}"` : ''} style="left:${pct(i)};width:${pct(1)}"><em>${DOW[q.w]}</em>${q.d}</span>`;
+    else if (q.w === 1) days += `<span class="g-tick" style="left:${pct(i)}">${q.m}/${q.d}</span>`;
+  }
+
+  let overlay = '';
+  for (let i = 0; i < N; i++) {
+    const d = s.start + i;
+    if (!isWorking(d)) overlay += `<i class="g-off${isNational(d) ? ' is-hol' : ''}" style="left:${pct(i)};width:${pct(1)}"></i>`;
+    if (i > 0 && weekday(d) === 1) overlay += `<i class="g-week" style="left:${pct(i)}"></i>`;
+  }
+  if (td >= s.start && td <= s.end) { overlay += `<i class="g-today" style="left:${pct(td - s.start + 0.5)}"></i>`; todayShown = true; }
+
+  let no = 0;
+  const rows = p.steps.map((st, idx) => {
+    const r = s.rows[idx];
+    const nm = st.name.trim() ? `<span>${esc(st.name)}</span>` : `<span class="untitled">${st.type === 'milestone' ? '未命名里程碑' : '未命名階段'}</span>`;
+    const note = st.note.trim() ? `<div class="g-note">${esc(st.note)}</div>` : '';
+    if (r.kind === 'ms') {
+      return `<div class="g-row is-ms-row">
+        <div class="g-label"><div class="g-name"><b>◆</b>${nm}</div><div class="g-meta">${md(r.date)}</div>${note}</div>
+        <div class="g-track"><i class="g-ms" style="left:${pct(r.date - s.start + 0.5)}"></i></div>
+      </div>`;
+    }
+    no++;
+    const segs = [];
+    for (const d of r.days) {
+      const last = segs[segs.length - 1];
+      if (last && d === last[1] + 1) last[1] = d; else segs.push([d, d]);
+    }
+    let track = '';
+    segs.forEach((g, k) => {
+      if (k > 0) { const a = segs[k - 1][1] + 1; track += `<i class="g-link" style="left:${pct(a - s.start)};width:${pct(g[0] - a)}"></i>`; }
+      track += `<i class="g-bar" style="left:calc(${pct(g[0] - s.start)} + 1px);width:calc(${pct(g[1] - g[0] + 1)} - 2px)"></i>`;
+    });
+    if (st.review) track += `<i class="g-review" style="left:${pct(r.end - s.start + 1)}" title="含主管確認"></i>`;
+    const meta = `<span class="nw">${rangeText(r)}</span> · <span class="nw">${r.n} 天</span>${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
+    return `<div class="g-row">
+      <div class="g-label"><div class="g-name"><b>${no}</b>${nm}</div><div class="g-meta">${meta}</div>${note}</div>
+      <div class="g-track">${track}</div>
+    </div>`;
+  }).join('');
+
+  // name the holidays inside this range, since the week ticks alone don't say why a bar breaks
+  const hols = state.skipNational ? HOLIDAY_PERIODS.filter(h => dayOf(h.end) >= s.start && dayOf(h.start) <= s.end) : [];
+  if (hols.length) holShown = true;
+  const holLine = hols.length ? `<p class="pj-hols">期間國定假日：${hols.map(h => `<b>${esc(h.name)}</b> ${periodText(h)}`).join('　')}</p>` : '';
+
+  return `<div class="gantt-scroll"><div class="gantt" style="--n:${N}">
+    <div class="g-head"><div class="g-head-label">階段</div><div class="g-scale">${months}${days}</div></div>
+    <div class="g-body"><div class="g-overlay" aria-hidden="true">${overlay}</div>${rows}</div>
+  </div></div>${holLine}`;
+}
+
+function renderPaper(sched) {
+  todayShown = false; holShown = false;
+  const withTasks = state.projects.filter(p => { const s = sched.get(p.id); return s.hasTask && !s.noStart; });
+  const rule = ruleText();
+  let stats = '';
+  if (withTasks.length) {
+    const s0 = Math.min(...withTasks.map(p => sched.get(p.id).start));
+    const s1 = Math.max(...withTasks.map(p => sched.get(p.id).end));
+    stats = `<div class="paper-stats">
+      <div><span>專案數</span><strong>${state.projects.length} 個</strong></div>
+      <div><span>最早開工</span><strong>${ymd(s0)}</strong></div>
+      <div><span>最晚完稿</span><strong>${ymd(s1)}</strong></div>
+    </div>`;
+  }
+  const sections = state.projects.map(p => {
+    const s = sched.get(p.id);
+    const name = p.title.trim() ? esc(p.title) : '未命名專案';
+    const head = `<div class="pj-head">
+      <h2 class="pj-name"><span class="pj-dot" aria-hidden="true"></span>${name}</h2>
+      ${s.hasTask ? `<div class="pj-range"><span>${s.noStart ? '尚未選擇起始日' : `${md(s.start)} → ${md(s.end)}`}</span><span class="pj-pill">${s.total} 個工作天</span></div>` : ''}
+    </div>`;
+    const body = !s.hasTask ? '<div class="pj-empty">尚未設定工作階段，請在左側新增階段並填入天數。</div>'
+      : s.noStart ? undatedHTML(p) : ganttHTML(p, s);
+    return `<section class="pj" style="--c:var(--s${p.color + 1})">${head}${body}</section>`;
+  }).join('');
+
+  $('#paper').innerHTML = `
+    <header>
+      <div class="paper-eyebrow">Project Timeline</div>
+      <h1 class="paper-title">${esc(state.docTitle.trim() || '專案時程規劃書')}</h1>
+      <div class="paper-sub">製表日期 ${ymd(todayDay())}　·　工作天計算：${rule}</div>
+      ${stats}
+    </header>
+    ${sections || '<div class="pj"><div class="pj-empty">目前沒有專案。請在左側新增專案。</div></div>'}
+    <footer class="paper-foot">
+      <div class="legend">
+        <span><i class="lg lg-bar"></i>工作期間</span>
+        <span><i class="lg lg-rv"></i>含主管確認</span>
+        <span><i class="lg lg-ms"></i>完稿／里程碑</span>
+        <span><i class="lg lg-off"></i>非工作日</span>
+        ${holShown ? '<span><i class="lg lg-hol"></i>國定假日</span>' : ''}
+        ${todayShown ? '<span><i class="lg lg-today"></i>今天</span>' : ''}
+      </div>
+      <span class="paper-brand">專案時程表產生器</span>
+    </footer>`;
+}
+
+function undatedHTML(p) {
+  let no = 0;
+  const items = p.steps.map(st => {
+    const ms = st.type === 'milestone';
+    const nm = st.name.trim() ? esc(st.name) : `<span class="untitled">${ms ? '未命名里程碑' : '未命名階段'}</span>`;
+    const meta = ms ? '前一階段完成後的隔一個工作天' : `${clampDays(st.days)} 天${st.review ? ' · <span class="nw rv">含主管確認</span>' : ''}`;
+    const note = st.note.trim() ? `<div class="g-note">${esc(st.note)}</div>` : '';
+    return `<li${ms ? ' class="is-ms-row"' : ''}><div class="g-name"><b>${ms ? '◆' : ++no}</b><span>${nm}</span></div><div class="g-meta">${meta}</div>${note}</li>`;
+  }).join('');
+  return `<div class="pj-empty">選擇起始日後，會自動排出每個階段的日期與甘特圖。</div><ol class="u-list">${items}</ol>`;
+}
+
+function ruleText() {
+  const off = [state.skipWeekends && '週六、週日', state.skipNational && '國定假日', state.holidays.length && `${state.holidays.length} 個休假日`].filter(Boolean);
+  const list = off.length > 1 ? `${off.slice(0, -1).join('、')}及${off.at(-1)}` : off[0];
+  return `${list ? `排除${list}` : '每天都算工作天'}；完稿為前一階段完成後的隔一個工作天`;
+}
+
+/* ---------- exports ---------- */
+// plain-text outline for LINE / Email: 📌 title (共 N 天), then • step (備註，含主管確認) - N天
+function buildText() {
+  const out = [`【${state.docTitle.trim() || '專案時程規劃書'}】`];
+  for (const p of state.projects) {
+    const total = p.steps.reduce((a, st) => a + (st.type === 'milestone' ? 0 : clampDays(st.days)), 0);
+    out.push('', `📌 ${p.title.trim() || '未命名專案'} (共 ${total} 天)`);
+    for (const st of p.steps) {
+      const ms = st.type === 'milestone';
+      const name = st.name.trim() || (ms ? '未命名里程碑' : '未命名階段');
+      const extra = [st.note.trim(), !ms && st.review ? '含主管確認' : ''].filter(Boolean).join('，');
+      out.push(`  • ${name}${extra ? ` (${extra})` : ''}${ms ? '' : ` - ${clampDays(st.days)}天`}`);
+    }
+  }
+  return out.join('\n');
+}
+
+function buildCSV() {
+  rebuildHolidays();
+  const cell = v => /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const rows = [['專案', '序號', '階段', '類型', '開始日', '結束日', '工作天', '含主管確認', '備註']];
+  for (const p of state.projects) {
+    const s = schedule(p);
+    let no = 0;
+    p.steps.forEach((st, i) => {
+      if (s.noStart) {
+        if (st.type === 'milestone') rows.push([p.title, '', st.name, '里程碑', '', '', 0, '', st.note]);
+        else rows.push([p.title, ++no, st.name, '工作階段', '', '', clampDays(st.days), st.review ? '是' : '', st.note]);
+        return;
+      }
+      const r = s.rows[i];
+      if (r.kind === 'ms') rows.push([p.title, '', st.name, '里程碑', isoOfDay(r.date), isoOfDay(r.date), 0, '', st.note]);
+      else rows.push([p.title, ++no, st.name, '工作階段', isoOfDay(r.start), isoOfDay(r.end), r.n, st.review ? '是' : '', st.note]);
+    });
+  }
+  return '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n');
+}
+
+const fileStamp = () => isoOfDay(todayDay()).replace(/-/g, '');
+const fileBase = () => (state.docTitle.trim() || '專案時程表').replace(/[\\/:*?"<>|]+/g, '').slice(0, 60) || '專案時程表';
+
+let downloadsP = null;
+function getDownloads() {
+  if (!downloadsP) {
+    const c = window.claude;
+    downloadsP = c && typeof c.use === 'function' ? Promise.resolve(c.use('downloads')).catch(() => null) : Promise.resolve(null);
+  }
+  return downloadsP;
+}
+
+async function offerFile(filename, data, fallback) {
+  const dl = await getDownloads();
+  if (dl) {
+    try {
+      await dl.save({ filename, data });
+      toast(`已下載 ${filename}`);
+      return;
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') { toast('已取消下載'); return; }
+      if (code === 'rate_limited') { toast('下載視窗已開啟，請先完成上一個'); return; }
+    }
+  } else if (!window.claude) {
+    // a regular browser tab (not the Claude viewer) can save through a plain download link
+    const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: 'text/csv;charset=utf-8' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`已下載 ${filename}`);
+    return;
+  }
+  fallback();
+}
+
+async function exportPNG(btn) {
+  if (typeof window.html2canvas !== 'function') { toast('圖片元件還沒載入完成，請稍後再試'); return; }
+  btn.disabled = true;
+  toast('正在產生圖片…');
+  try {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#ffffff';
+    const canvas = await window.html2canvas($('#paper'), {
+      scale: 2, backgroundColor: bg, useCORS: true, logging: false, windowWidth: 1400,
+      onclone(doc) {
+        const l = doc.getElementById('layout'); if (l) l.dataset.view = 'preview';
+        const pv = doc.querySelector('.preview'); if (pv) { pv.style.position = 'static'; pv.style.maxHeight = 'none'; }
+        const sc = doc.getElementById('paper-scroll'); if (sc) { sc.style.overflow = 'visible'; sc.style.padding = '0'; }
+        const pp = doc.getElementById('paper');
+        pp.style.width = '1120px'; pp.style.maxWidth = 'none'; pp.style.fontVariantNumeric = 'normal'; pp.style.boxShadow = 'none'; pp.style.borderRadius = '0'; pp.style.padding = '48px 52px 32px';
+        doc.querySelectorAll('.gantt-scroll').forEach(g => { g.style.overflow = 'visible'; });
+        doc.querySelectorAll('.gantt').forEach(g => { g.style.setProperty('--lw', '340px'); });
+      }
+    });
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('empty image');
+    const name = `${fileBase()}_${fileStamp()}.png`;
+    await offerFile(name, blob, () => showModal('圖片已產生', '這個檢視無法直接下載。請在圖片上按右鍵（手機長按）另存。', `<img alt="時程表圖片" src="${canvas.toDataURL('image/png')}">`));
+  } catch (err) {
+    console.error(err);
+    toast('圖片產生失敗，請再試一次');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function exportCSV() {
+  const csv = buildCSV();
+  const name = `${fileBase()}_${fileStamp()}.csv`;
+  offerFile(name, csv, () => showModal('CSV 內容', '這個檢視無法直接下載。請全選複製，貼到 Excel 或 Google 試算表。', `<textarea class="input" readonly>${esc(csv.replace(/^﻿/, ''))}</textarea>`));
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+function copyText() {
+  const text = buildText();
+  const fallback = () => {
+    if (legacyCopy(text)) toast('已複製文字時程，可直接貼到 LINE 或 Email');
+    else showModal('文字時程', '無法自動複製，請全選後手動複製。', `<textarea class="input" readonly>${esc(text)}</textarea>`);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast('已複製文字時程，可直接貼到 LINE 或 Email'), fallback);
+  } else fallback();
+}
+
+/* ---------- toast & modal ---------- */
+let toastTimer = 0;
+function toast(msg, action) {
+  const t = $('#toast'), b = $('#toast-act');
+  $('#toast-msg').textContent = msg;
+  b.hidden = !action;
+  b.onclick = action ? () => { hideToast(); action.run(); } : null;
+  if (action) b.textContent = action.label;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, action ? 6000 : 2600);
+}
+function hideToast() { $('#toast').classList.remove('show'); }
+
+function showModal(title, text, bodyHTML) {
+  $('#modal-h').textContent = title;
+  $('#modal-p').textContent = text;
+  $('#modal-body').innerHTML = bodyHTML;
+  $('#modal').hidden = false;
+  const ta = $('#modal-body textarea');
+  if (ta) { ta.focus(); ta.select(); } else $('#modal [data-act="modal-close"]').focus();
+}
+
+/* ---------- actions ---------- */
+function ctx(el) {
+  const pEl = el.closest('[data-pid]'), sEl = el.closest('[data-sid]');
+  const p = pEl && state.projects.find(x => x.id === pEl.dataset.pid);
+  const si = p && sEl ? p.steps.findIndex(x => x.id === sEl.dataset.sid) : -1;
+  return { p, s: si >= 0 ? p.steps[si] : null, si, pEl, sEl };
+}
+
+function applyTemplate(key, targetId) {
+  const t = TEMPLATES[key];
+  const target = targetId && state.projects.find(p => p.id === targetId);
+  if (target && isPristine(target)) {
+    const fresh = makeProject(key, state.projects);
+    target.title = fresh.title;
+    target.steps = fresh.steps;
+    renderEditor();
+    commit();
+    toast(`已套用「${t.name}」範本`);
+    return;
+  }
+  const p = makeProject(key, state.projects);
+  state.projects.push(p);
+  renderEditor(key === 'blank' ? `#title-${p.id}` : null);
+  commit();
+  const card = document.querySelector(`[data-pid="${p.id}"]`);
+  if (card) card.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  toast(state.projects.length > 1 ? `已新增「${t.name}」，原本的專案都保留著` : `已新增「${t.name}」`);
+}
+
+function setMenu(open) {
+  $('#tpl-menu').hidden = !open;
+  $('#menu-btn').setAttribute('aria-expanded', String(open));
+  if (open) { const first = $('#tpl-menu button'); if (first) first.focus(); }
+}
+
+let clearTimer = 0;
+function addHolidays(list) {
+  const valid = list.filter(validIso);
+  const before = state.holidays.length;
+  state.holidays = [...new Set([...state.holidays, ...valid])].sort();
+  renderSettings();
+  commit();
+  return state.holidays.length - before;
+}
+function parseDates(text) {
+  const out = [];
+  const re = /(\d{4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/g;
+  let m;
+  while ((m = re.exec(text))) out.push(isoOf(+m[1], +m[2], +m[3]));
+  return out;
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!e.target.closest('.menu-anchor') && !$('#tpl-menu').hidden) setMenu(false);
+  if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  const { p, s, si } = ctx(b);
+
+  switch (act) {
+    case 'menu': setMenu($('#tpl-menu').hidden); break;
+    case 'tpl': setMenu(false); applyTemplate(b.dataset.tpl, b.dataset.target); break;
+    case 'view': {
+      $('#layout').dataset.view = b.dataset.view;
+      document.querySelectorAll('[data-act="view"]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      break;
+    }
+    case 'clear': {
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed'); b.textContent = '再按一次確認清空';
+        clearTimeout(clearTimer);
+        clearTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = '清空全部'; }, 3000);
+        break;
+      }
+      clearTimeout(clearTimer);
+      b.classList.remove('armed'); b.textContent = '清空全部';
+      snapshot();
+      state.projects = [];
+      state.projects.push(makeProject('blank', state.projects));
+      renderAll();
+      save();
+      toast('已清空，換上一個空白專案', { label: '復原', run: undo });
+      break;
+    }
+    case 'p-up': case 'p-down': {
+      const i = state.projects.indexOf(p), j = i + (act === 'p-up' ? -1 : 1);
+      if (j < 0 || j >= state.projects.length) break;
+      [state.projects[i], state.projects[j]] = [state.projects[j], state.projects[i]];
+      renderEditor(`[data-pid="${p.id}"] [data-act="${act}"]`);
+      commit();
+      break;
+    }
+    case 'p-dup': {
+      const copy = { ...JSON.parse(JSON.stringify(p)), id: uid('p'), title: p.title.trim() ? `${p.title}（副本）` : '', color: nextColor(state.projects) };
+      copy.steps = copy.steps.map(x => ({ ...x, id: uid('s') }));
+      state.projects.splice(state.projects.indexOf(p) + 1, 0, copy);
+      renderEditor(`#title-${copy.id}`);
+      commit();
+      toast('已複製專案');
+      break;
+    }
+    case 'p-del': {
+      snapshot();
+      state.projects = state.projects.filter(x => x !== p);
+      renderEditor();
+      commit();
+      toast(`已刪除「${p.title.trim() || '未命名專案'}」`, { label: '復原', run: undo });
+      break;
+    }
+    case 's-up': case 's-down': {
+      const j = si + (act === 's-up' ? -1 : 1);
+      if (j < 0 || j >= p.steps.length) break;
+      [p.steps[si], p.steps[j]] = [p.steps[j], p.steps[si]];
+      renderEditor(`[data-sid="${s.id}"] [data-act="${act}"]`);
+      commit();
+      break;
+    }
+    case 's-del': {
+      snapshot();
+      p.steps.splice(si, 1);
+      renderEditor();
+      commit();
+      toast(`已刪除「${s.name.trim() || '未命名階段'}」`, { label: '復原', run: undo });
+      break;
+    }
+    case 's-inc': case 's-dec': {
+      s.days = clampDays(s.days + (act === 's-inc' ? 1 : -1));
+      b.parentElement.querySelector('input').value = s.days;
+      commit();
+      break;
+    }
+    case 's-review': {
+      s.review = !s.review;
+      b.classList.toggle('on', s.review);
+      b.setAttribute('aria-pressed', String(s.review));
+      commit();
+      break;
+    }
+    case 'add-task': case 'add-ms': {
+      const ms = act === 'add-ms';
+      const ns = makeStep(ms ? { type: 'milestone', name: '' } : { days: 1 });
+      const lastMs = p.steps.length && p.steps[p.steps.length - 1].type === 'milestone';
+      // keep the closing milestone last when adding a working step
+      if (!ms && lastMs) p.steps.splice(p.steps.length - 1, 0, ns); else p.steps.push(ns);
+      renderEditor(`#name-${ns.id}`);
+      commit();
+      break;
+    }
+    case 'hol-add': {
+      const v = $('#hol-date').value;
+      if (!validIso(v)) { toast('請先選一個日期'); break; }
+      toast(addHolidays([v]) ? `已加入休假日 ${ymd(dayOf(v))}` : '這天已經在休假日清單裡');
+      $('#hol-date').value = '';
+      break;
+    }
+    case 'hol-bulk': {
+      const found = parseDates($('#hol-bulk').value);
+      if (!found.length) { toast('沒有讀到日期，格式例如 2026/12/25'); break; }
+      const added = addHolidays(found);
+      $('#hol-bulk').value = '';
+      toast(`讀到 ${found.length} 個日期，新加入 ${added} 個`);
+      break;
+    }
+    case 'hol-del': {
+      state.holidays = state.holidays.filter(h => h !== b.dataset.date);
+      renderSettings();
+      commit();
+      break;
+    }
+    case 'copy': copyText(); break;
+    case 'csv': exportCSV(); break;
+    case 'png': exportPNG(b); break;
+    case 'modal-close': $('#modal').hidden = true; break;
+  }
+});
+
+document.addEventListener('input', e => {
+  const el = e.target, f = el.dataset && el.dataset.field;
+  if (!f) return;
+  if (f === 'docTitle') { state.docTitle = el.value; commit(); return; }
+  if (f === 'skipWeekends' || f === 'skipNational') return;
+  const { p, s } = ctx(el);
+  if (!p) return;
+  if (f === 'title') p.title = el.value;
+  else if (f === 'start') { if (el.value === '') p.start = ''; else if (validIso(el.value)) p.start = el.value; else return; }
+  else if (s && f === 'name') s.name = el.value;
+  else if (s && f === 'note') s.note = el.value;
+  else if (s && f === 'days') { if (el.value === '') return; s.days = clampDays(el.value); }
+  commit();
+});
+
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.id === 'skip-weekends') { state.skipWeekends = el.checked; commit(); return; }
+  if (el.id === 'skip-national') { state.skipNational = el.checked; commit(); return; }
+  if (el.dataset && el.dataset.field === 'days') { const { s } = ctx(el); if (s) el.value = s.days; }
+  if (el.dataset && el.dataset.field === 'start' && el.value !== '' && !validIso(el.value)) { const { p } = ctx(el); if (p) el.value = p.start; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!$('#modal').hidden) { $('#modal').hidden = true; return; }
+    if (!$('#tpl-menu').hidden) { setMenu(false); $('#menu-btn').focus(); }
+    return;
+  }
+  // Enter in a step name adds the next step right below it
+  if (e.key === 'Enter' && !e.isComposing && e.target.classList && e.target.classList.contains('step-name')) {
+    e.preventDefault();
+    const { p, si } = ctx(e.target);
+    if (!p) return;
+    const ns = makeStep({ days: 1 });
+    p.steps.splice(si + 1, 0, ns);
+    renderEditor(`#name-${ns.id}`);
+    commit();
+  }
+});
+
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').hidden = true; });
+
+/* ---------- boot ---------- */
+renderMenu();
+renderNational();
+renderAll();
+save();
+setTimeout(getDownloads, 0);
+})();
+</script>
+</body>
+</html>
